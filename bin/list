@@ -1,0 +1,39 @@
+#!/usr/bin/env node
+// lerd db-import-host:list [mysql|postgres]
+// The databases on this machine's own server, and the lerd site each one fills.
+const { parseArgs, mcpInput } = require('../lib/args');
+const { ENGINES, siteDatabase, listDatabases } = require('../lib/host');
+const { api } = require('../lib/lerd');
+
+(async () => {
+  const input = mcpInput();
+  const engines = input?.engine ? [input.engine] : parseArgs(process.argv.slice(2))._.slice(0, 1);
+  const sites = await api('/api/sites');
+  const rows = [];
+  const errors = [];
+  for (const engine of engines.length ? engines : Object.keys(ENGINES)) {
+    if (!ENGINES[engine]) throw new Error(`unknown engine ${engine}, use mysql or postgres`);
+    let names;
+    try {
+      names = listDatabases(engine);
+    } catch (e) {
+      if (engines.length) throw e;
+      errors.push(`${engine}: ${e.message}`); // shown only when no engine answered at all
+      continue;
+    }
+    for (const db of names) {
+      const owners = sites.filter((s) => siteDatabase(s)?.engine === engine && siteDatabase(s).database === db).map((s) => s.name);
+      rows.push({ engine, database: db, sites: owners });
+    }
+  }
+  if (input) return console.log(JSON.stringify(rows));
+  if (!rows.length) {
+    console.log('No database found on a MySQL or PostgreSQL server on this machine. Set the connection with lerd db-import-host:connect.');
+    for (const e of errors) console.log('  ' + e);
+    return;
+  }
+  for (const r of rows) console.log(`${r.engine.padEnd(9)} ${r.database.padEnd(32)} ${r.sites.join(', ') || '-'}`);
+})().catch((e) => {
+  console.error(e.message);
+  process.exit(1);
+});

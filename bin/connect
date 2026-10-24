@@ -1,0 +1,26 @@
+#!/usr/bin/env node
+// lerd db-import-host:connect <mysql|postgres> [--host h] [--port p] [--user u]
+//   [--password pw] [--socket path] [--bin-dir dir]
+// Saves how to reach the database server installed on this machine.
+const { parseArgs } = require('../lib/args');
+const { ENGINES, loadSettings, saveSettings } = require('../lib/host');
+
+const KEYS = ['host', 'port', 'user', 'password', 'socket', 'bin_dir'];
+
+try {
+  const opts = parseArgs(process.argv.slice(2));
+  const engine = opts._[0];
+  if (!ENGINES[engine]) throw new Error('usage: lerd db-import-host:connect <mysql|postgres> [--host h] [--port p] [--user u] [--password pw] [--socket path] [--bin-dir dir]');
+  if (opts['bin-dir']) opts.bin_dir = opts['bin-dir'];
+  const settings = loadSettings();
+  const conn = settings[engine] || {};
+  for (const k of KEYS) if (opts[k] !== undefined) conn[k] = opts[k];
+  settings[engine] = conn;
+  saveSettings(settings);
+  const shown = { ...ENGINES[engine].defaults, ...conn };
+  if (shown.password) shown.password = '(saved)';
+  for (const [k, v] of Object.entries(shown)) console.log(`${k.padEnd(8)} ${v}`);
+} catch (e) {
+  console.error(e.message);
+  process.exit(1);
+}

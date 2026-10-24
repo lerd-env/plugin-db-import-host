@@ -1,0 +1,78 @@
+#!/usr/bin/env node
+// lerd db-import-host:import [site...] [--all] [--from <database>] [--database <name>]
+// Copies each site's database from this machine's own server into the lerd
+// service the site uses, snapshotting what lerd held first.
+const fs = require('node:fs');
+const path = require('node:path');
+const { parseArgs, mcpInput } = require('../lib/args');
+const { siteDatabase, listDatabases, dumpTo, mariadbToMysql, rewriteFile } = require('../lib/host');
+const { api, lerd } = require('../lib/lerd');
+
+async function importSite(site, from, database) {
+  const target = siteDatabase({ ...site, db_database: database || site.db_database });
+  if (!target) {
+    if (siteDatabase({ ...site, db_database: '-' })) throw new Error(`lerd does not know ${site.name}'s database name; pass --database <name>`);
+    throw new Error(`${site.name} uses no MySQL or PostgreSQL service in lerd`);
+  }
+  const source = from || target.database;
+  const tmp = path.join(process.env.LERD_PLUGIN_DATA, 'tmp');
+  fs.mkdirSync(tmp, { recursive: true });
+  const file = path.join(tmp, `${site.name}.sql`);
+  console.log(`${site.name}: dumping ${source} from the ${target.engine} server on this machine`);
+  try {
+    dumpTo(target.engine, source, file);
+    if (/^mysql(-|$)/.test(target.service)) await rewriteFile(file, mariadbToMysql);
+    lerd(['db:create', target.database, '-s', target.service], site.path);
+    lerd(['db:snapshot', 'before-host-import', '-s', target.service, '-d', target.database], site.path);
+    lerd(['db:import', file, '--fresh', '-s', target.service, '-d', target.database], site.path);
+  } finally {
+    fs.rmSync(file, { force: true });
+  }
+  console.log(`${site.name}: ${source} is now in lerd's ${target.service} as ${target.database}`);
+}
+
+(async () => {
+  const input = mcpInput();
+  const opts = input || parseArgs(process.argv.slice(2), ['all']);
+  const names = input ? [input.site] : opts._.length ? opts._ : opts.all ? [] : [process.env.LERD_SITE];
+  const sites = await api('/api/sites');
+
+  if ((opts.from || opts.database) && (opts.all || names.length > 1)) throw new Error('--from and --database take a single site');
+  let chosen;
+  if (opts.all) {
+    // Sites in a group can share one database; import it once.
+    const seen = new Set();
+    const onHost = {};
+    chosen = sites.filter((s) => {
+      const t = siteDatabase(s);
+      if (!t) return false;
+      onHost[t.engine] ??= (() => { try { return listDatabases(t.engine); } catch { return []; } })();
+      const key = t.service + '/' + t.database;
+      if (!onHost[t.engine].includes(t.database) || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+    if (!chosen.length) return console.log('No lerd site has a database of the same name on this machine\'s server.');
+  } else {
+    if (!names[0]) throw new Error('usage: lerd db-import-host:import [site...] [--all] [--from <database>] [--database <name>], or run it inside a linked project');
+    chosen = names.map((n) => {
+      const s = sites.find((x) => x.name === n);
+      if (!s) throw new Error(`no lerd site named ${n}`);
+      return s;
+    });
+  }
+
+  let failed = 0;
+  for (const s of chosen) {
+    try {
+      await importSite(s, opts.from, opts.database);
+    } catch (e) {
+      failed++;
+      console.error(`${s.name}: ${e.message}`);
+    }
+  }
+  if (failed) process.exit(1);
+})().catch((e) => {
+  console.error(e.message);
+  process.exit(1);
+});

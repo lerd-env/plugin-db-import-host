@@ -1,0 +1,48 @@
+api_version: 1
+name: db-import-host
+lerd: ">=1.38"
+version: 0.1.0
+description: Bring your databases over from a MySQL, MariaDB or PostgreSQL server installed on this machine
+docs: DOCS.md
+icon: icon.svg
+
+# lerd db-import-host:connect | list | import
+commands:
+  - name: connect
+    usage: "Save how to reach this machine's own server: connect <mysql|postgres> [--host] [--port] [--user] [--password] [--socket] [--bin-dir]"
+    run: bin/connect
+  - name: list
+    usage: The databases on this machine's own server and the lerd site each one fills
+    run: bin/list
+  - name: import
+    usage: "Copy a site's database from this machine's own server into lerd: import [site...] [--all] [--from <database>] [--database <name>]"
+    run: bin/import
+
+site_commands:
+  - name: import
+    label: Import database from this machine
+    description: Replace this site's lerd database with the one of the same name on the MySQL or PostgreSQL server installed on this machine, after a snapshot
+    confirm: true
+    run: bin/import
+
+mcp:
+  skill: SKILL.md
+  tools:
+    - name: list
+      description: List the databases on the MySQL/MariaDB or PostgreSQL server installed natively on this machine (outside lerd), with the lerd site each one would fill
+      input_schema:
+        type: object
+        properties:
+          engine: {type: string, enum: [mysql, postgres]}
+      run: bin/list
+    - name: import
+      description: Replace a lerd site's database with the copy on the machine's own MySQL or PostgreSQL server. Snapshots the lerd database first as before-host-import
+      input_schema:
+        type: object
+        required: [site]
+        properties:
+          site: {type: string, description: lerd site name}
+          from: {type: string, description: Database name on the machine's server, when it differs from the site's}
+          database: {type: string, description: The site's database name in lerd, needed only when lerd does not know it (WordPress, Drupal)}
+      run: bin/import
+      timeout: 10m
