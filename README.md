@@ -38,7 +38,7 @@ lerd db-import-host:import
 | `--from` | The database on the machine's server, when its name differs from the site's |
 | `--database` | The site's database in Lerd, when Lerd does not know it (WordPress, Drupal) |
 
-By default it connects to `127.0.0.1:3306` as `root` with no password for MySQL and MariaDB, and `127.0.0.1:5432` as `postgres` for PostgreSQL. Save anything else once:
+By default it connects to `127.0.0.1:3306` as `root` with no password for MySQL and MariaDB, and `127.0.0.1:5432` as `postgres` for PostgreSQL. To save anything else, run `lerd db-import-host:connect` and answer its questions; it tries the connection before saving. Or pass it all at once:
 
 ```bash
 lerd db-import-host:connect mysql --user root --password secret

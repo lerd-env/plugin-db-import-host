@@ -7,4 +7,4 @@ Use `db-import-host_list` first: it shows the databases on the machine's own ser
 
 The import replaces the site's lerd database, after saving a `before-host-import` snapshot that `db` `restore` brings back. Say so before running it. The machine's server is only read.
 
-When the list fails because no client tools or no server were found, the user sets the connection once with `lerd db-import-host:connect <mysql|postgres> --user ... --password ... [--port|--socket] [--bin-dir]`; never guess a password.
+When the list fails because no client tools or no server were found, ask the user to run `lerd db-import-host:connect` in their terminal, which asks for each value and tests the connection; never guess a password.

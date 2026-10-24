@@ -9,7 +9,7 @@ icon: icon.svg
 # lerd db-import-host:connect | list | import
 commands:
   - name: connect
-    usage: "Save how to reach this machine's own server: connect <mysql|postgres> [--host] [--port] [--user] [--password] [--socket] [--bin-dir]"
+    usage: "Save how to reach this machine's own server, asking for each value when run without arguments: connect [<mysql|postgres> --host --port --user --password --socket --bin-dir]"
     run: bin/connect
   - name: list
     usage: The databases on this machine's own server and the lerd site each one fills

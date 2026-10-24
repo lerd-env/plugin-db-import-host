@@ -1,26 +1,59 @@
 #!/usr/bin/env node
 // lerd db-import-host:connect <mysql|postgres> [--host h] [--port p] [--user u]
 //   [--password pw] [--socket path] [--bin-dir dir]
-// Saves how to reach the database server installed on this machine.
+// Saves how to reach the database server installed on this machine. Run
+// without arguments in a terminal, it asks for each value instead.
+const readline = require('node:readline');
 const { parseArgs } = require('../lib/args');
-const { ENGINES, loadSettings, saveSettings } = require('../lib/host');
+const { ENGINES, hasClients, listDatabases, loadSettings, saveSettings } = require('../lib/host');
+const { askConnection } = require('../lib/wizard');
 
 const KEYS = ['host', 'port', 'user', 'password', 'socket', 'bin_dir'];
+const USAGE = 'usage: lerd db-import-host:connect <mysql|postgres> [--host h] [--port p] [--user u] [--password pw] [--socket path] [--bin-dir dir]';
 
-try {
+async function wizard(settings) {
+  const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+  let hidden = false;
+  // readline echoes what is typed; while the password is asked, echo nothing.
+  rl._writeToOutput = (s) => { if (!hidden || /^\r?\n$/.test(s)) process.stdout.write(s); };
+  const ask = (question, def = '', opts = {}) => new Promise((resolve) => {
+    rl.question(def ? `${question} [${def}]: ` : `${question}: `, (answer) => {
+      hidden = false;
+      resolve(answer.trim() || def);
+    });
+    hidden = !!opts.hidden; // after the prompt is written, so only the typing is hidden
+  });
+  try {
+    return await askConnection(ask, settings, hasClients);
+  } finally {
+    rl.close();
+  }
+}
+
+(async () => {
   const opts = parseArgs(process.argv.slice(2));
-  const engine = opts._[0];
-  if (!ENGINES[engine]) throw new Error('usage: lerd db-import-host:connect <mysql|postgres> [--host h] [--port p] [--user u] [--password pw] [--socket path] [--bin-dir dir]');
-  if (opts['bin-dir']) opts.bin_dir = opts['bin-dir'];
   const settings = loadSettings();
-  const conn = settings[engine] || {};
-  for (const k of KEYS) if (opts[k] !== undefined) conn[k] = opts[k];
+  let engine;
+  let conn;
+  if (!opts._.length && Object.keys(opts).length === 1) {
+    if (!process.stdin.isTTY) throw new Error(USAGE);
+    ({ engine, conn } = await wizard(settings));
+    if (!conn.bin_dir) delete conn.bin_dir;
+    const found = listDatabases(engine, conn);
+    console.log(`Connected, ${found.length} database${found.length === 1 ? '' : 's'} found.`);
+  } else {
+    engine = opts._[0];
+    if (!ENGINES[engine]) throw new Error(USAGE);
+    if (opts['bin-dir']) opts.bin_dir = opts['bin-dir'];
+    conn = settings[engine] || {};
+    for (const k of KEYS) if (opts[k] !== undefined) conn[k] = opts[k];
+  }
   settings[engine] = conn;
   saveSettings(settings);
   const shown = { ...ENGINES[engine].defaults, ...conn };
   if (shown.password) shown.password = '(saved)';
   for (const [k, v] of Object.entries(shown)) console.log(`${k.padEnd(8)} ${v}`);
-} catch (e) {
+})().catch((e) => {
   console.error(e.message);
   process.exit(1);
-}
+});
